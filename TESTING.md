@@ -72,7 +72,6 @@ await api.tasks.post({
 }); // POST /tasks
 await api.tasks({ taskSlug: "example-task" }).get(); // GET /tasks/:taskSlug
 await api.kv({ key: "test-key" }).put({ value: "hello" }); // PUT /kv/:key
-await api.demo["rate-limited"].get(); // GET /demo/rate-limited
 ```
 
 If a Treaty call does not compile, treat that as useful feedback. Either the route contract changed or the test is trying to send an invalid request.
@@ -116,7 +115,7 @@ Prefer assertions on stable fields like `status`, `type`, `on`, `property`, and 
 
 Vitest runs in Node, but the app imports `cloudflare:workers` for the Worker `env`. `vitest.config.ts` aliases that module to `tests/mocks/cloudflare-workers.ts`.
 
-The current mock provides an in-memory `env.KV` implementation for the app's KV, cache, and rate-limit paths.
+The current mock provides an in-memory `env.KV` implementation for the app's KV routes.
 
 Use `resetTestKv()` in `beforeEach` when a test touches KV-backed behavior:
 
@@ -157,24 +156,13 @@ layer(TaskServiceLive)("TaskService", (it) => {
 
 Use `layer(...)` when the unit under test requires services. Use plain Vitest when the test is only checking HTTP behavior through Elysia.
 
-## 🔌 Plugins And Stateful Routes
-
-Cache and rate-limit routes depend on KV state. Test them as request sequences:
-
-- First cached request should usually be a `MISS`.
-- Second identical cached request should usually be a `HIT`.
-- Rate-limit tests must send enough sequential requests to cross the limit.
-- Reset KV state between tests.
-
-For ordered stateful checks, keep the order explicit. Do not parallelize requests that are intentionally testing sequential behavior.
-
 ## ✅ What To Cover
 
 For every new route, cover:
 
 - Expected success status and body shape.
 - At least one relevant schema failure.
-- Important headers when the route or plugin owns them.
+- Important headers when the route owns them.
 - Error status/body for recoverable tagged errors.
 - KV side effects when the route reads or writes storage.
 

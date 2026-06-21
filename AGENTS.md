@@ -33,14 +33,10 @@ A **Cloudflare Worker** API built with **Elysia** framework and **Bun** runtime.
 
 ```
 src/
-├── index.ts           # App entrypoint - registers routes and plugins
+├── index.ts           # App entrypoint - registers routes
 ├── effect/            # Effect app layer, runtime helpers, and tagged errors
 ├── services/          # Context.Service definitions plus Live layers
-├── plugins/           # Reusable Elysia plugins (macros)
-│   ├── cache.ts       # Response caching with KV
-│   └── rate-limit.ts  # Rate limiting with KV
 ├── routes/            # API route handlers (one file per endpoint)
-│   ├── demo/          # Demo routes for testing plugins
 │   ├── storage/       # KV example routes
 │   └── tasks/         # Task CRUD routes
 └── schemas/           # Effect Schema models for validation/OpenAPI
@@ -59,8 +55,6 @@ tests/
 - `/docs` serves Scalar/OpenAPI UI, and `/docs/openapi.json` serves the OpenAPI spec.
 - `/tasks` and `/tasks/:taskSlug` are demo CRUD-style routes backed by static/example data.
 - `/kv/:key` reads, writes, and deletes values through the Cloudflare `KV` binding.
-- `/demo/cached*` demonstrates the cache macro.
-- `/demo/rate-limited*` demonstrates the rate-limit macro.
 
 ## ✅ Conventions
 
@@ -78,7 +72,12 @@ import { RouteRuntime } from "./effect/app";
 
 export const myRoute = new Elysia().get(
   "/path",
-  ({ query }) => RouteRuntime.runPromise(Effect.succeed({ query })),
+  ({ query, status }) =>
+    RouteRuntime.runPromise(
+      Effect.succeed({ query }).pipe(
+        Effect.map((result) => status(200, result))
+      )
+    ),
   {
     detail: {
       summary: "Description for OpenAPI",
@@ -113,14 +112,17 @@ export const MySchema = Schema.Struct({
 
 - Keep Elysia as the HTTP boundary and run Effect programs with `RouteRuntime.runPromise(...)`.
 - `RouteRuntime` is the reusable `ManagedRuntime` from `src/effect/app.ts`; do not provide the full app layer per request.
+- Keep route pipes inline. Do not pass Elysia `status` into helper functions.
+- Map successful route results inside the Effect pipe with `Effect.map((result) => status(200, result))`.
+- Map recoverable route failures inline with `Effect.catchTags({ ... })` and return `Effect.succeed(status(code, body))` from catch handlers.
 - Define dependencies as `Context.Service` classes under `src/services/`.
 - Provide implementations as `*Live` layers and compose them in `src/effect/app.ts`.
 - Use `Schema.TaggedErrorClass` classes under `src/effect/errors/` for recoverable domain/IO failures so constructor payload properties are Effect Schema-backed.
 - Give distinct failing operations distinct tagged error classes, such as `GetKvError`, `PutKvError`, and `DeleteKvError`; do not use a generic error with an `operation` field.
 - Construct operation-specific tagged errors inline at the failing boundary; do not add local error-constructor wrappers like `kvError(...)`.
-- Use `Effect.gen`, `Effect.succeed`, `Effect.try`, `Effect.tryPromise`, `Effect.result`, and `recoverTagged(...)` for business logic, parsing, async IO, and recoverable errors.
-- Use Effect's clock-backed APIs for current time inside Effect code: `Clock.currentTimeMillis` for numeric time and `DateTime.now` plus `DateTime.formatIso*` for formatted dates. Do not call `Date.now()` or `new Date()` as the time source in services, routes, or plugins.
-- Use `CloudflareKv` from `src/services/cloudflare-kv.ts` for KV operations instead of calling `env.KV` directly in routes/plugins.
+- Use `Effect.gen`, `Effect.succeed`, `Effect.try`, `Effect.tryPromise`, `Effect.map`, `Effect.catchTag`, `Effect.catchTags`, and `Effect.catchCause` for business logic, parsing, async IO, and recoverable errors.
+- Use Effect's clock-backed APIs for current time inside Effect code: `Clock.currentTimeMillis` for numeric time and `DateTime.now` plus `DateTime.formatIso*` for formatted dates. Do not call `Date.now()` or `new Date()` as the time source in services or routes.
+- Use `CloudflareKv` from `src/services/cloudflare-kv.ts` for KV operations instead of calling `env.KV` directly in routes.
 - Use `Schema.decodeUnknownEffect(...)` when data comes from storage or JSON parsing and needs runtime validation.
 
 ### 🧪 Testing
@@ -133,8 +135,7 @@ export const MySchema = Schema.Struct({
 - Use `@effect/vitest` for Effect-heavy tests, especially `layer(...)(...)` and `it.effect(...)` when testing services and layers.
 - Keep Cloudflare runtime shims under `tests/mocks/`; do not leak test-only mocks into `src/`.
 - Add tests for schema validation failures when adding request schemas.
-- Cover success behavior, validation failures, recoverable tagged errors, plugin-owned headers, and KV side effects when the route owns them.
-- Keep stateful cache/rate-limit route tests sequential and reset test KV state between tests.
+- Cover success behavior, validation failures, recoverable tagged errors, route-owned headers, and KV side effects when the route owns them.
 
 ### ☁️ Cloudflare Bindings
 
@@ -148,34 +149,6 @@ export const MySchema = Schema.Struct({
 **Available binding exposed through services:**
 
 - `env.KV` - KVNamespace for key-value storage
-
-### 🔌 Plugins
-
-KV-powered plugins using Elysia macros. Enable per-route by adding the macro option:
-
-**Cache Plugin** (`src/plugins/cache.ts`):
-
-```typescript
-import { cachePlugin } from "./plugins/cache";
-
-new Elysia()
-  .use(cachePlugin())
-  .get("/data", () => getData(), { cache: 300 }) // Cache 300s
-  .get("/fresh", () => getData()); // No cache (macro not defined)
-```
-
-**Rate Limit Plugin** (`src/plugins/rate-limit.ts`):
-
-```typescript
-import { rateLimitPlugin } from "./plugins/rate-limit";
-
-new Elysia()
-  .use(rateLimitPlugin())
-  .get("/api", () => getData(), { rateLimit: { max: 100, window: 60 } })
-  .get("/public", () => getData()); // No limit (macro not defined)
-```
-
-**Note:** KV minimum TTL is 60 seconds.
 
 ### 🔐 Install Security
 

@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { Elysia } from "elysia";
 
 import { RouteRuntime } from "../../effect/app";
@@ -7,7 +7,12 @@ import { TaskService } from "../../services/tasks";
 
 export const createTaskRoute = new Elysia().post(
   "/tasks",
-  () => RouteRuntime.runPromise(TaskService.use((tasks) => tasks.create())),
+  ({ status }) =>
+    RouteRuntime.runPromise(
+      TaskService.use((tasks) => tasks.create()).pipe(
+        Effect.map((result) => status(200, result))
+      )
+    ),
   {
     body: Schema.toStandardSchemaV1(TaskSchema),
     detail: {

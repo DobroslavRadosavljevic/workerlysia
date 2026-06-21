@@ -17,8 +17,3 @@ export const ErrorMessageResponseSchema = Schema.Struct({
   error: Schema.String,
   message: Schema.String,
 });
-
-export const RateLimitHeadersSchema = Schema.Struct({
-  "cf-connecting-ip": Schema.optionalKey(Schema.String),
-  "x-forwarded-for": Schema.optionalKey(Schema.String),
-});

@@ -19,21 +19,22 @@ export const kvRoutes = new Elysia({ prefix: "/kv" })
     "/:key",
     ({ params, status }) =>
       RouteRuntime.runPromise(
-        Effect.gen(function* getKvValue() {
-          const kv = yield* CloudflareKv;
-          const result = yield* Effect.result(kv.get(params.key));
-
-          if (result._tag === "Failure") {
-            return status(500, {
-              error: "Failed to retrieve key",
-              message: result.failure.message,
-            });
-          }
-
-          return result.success === null
-            ? status(404, { error: "Key not found" })
-            : { key: params.key, value: result.success };
-        })
+        CloudflareKv.use((kv) => kv.get(params.key)).pipe(
+          Effect.map((value) =>
+            value === null
+              ? status(404, { error: "Key not found" })
+              : status(200, { key: params.key, value })
+          ),
+          Effect.catchTags({
+            GetKvError: (error) =>
+              Effect.succeed(
+                status(500, {
+                  error: "Failed to retrieve key",
+                  message: error.message,
+                })
+              ),
+          })
+        )
       ),
     {
       detail: {
@@ -52,22 +53,23 @@ export const kvRoutes = new Elysia({ prefix: "/kv" })
     "/:key",
     ({ body, params, status }) =>
       RouteRuntime.runPromise(
-        Effect.gen(function* putKvValue() {
-          const kv = yield* CloudflareKv;
-          const result = yield* Effect.result(kv.put(params.key, body.value));
-
-          if (result._tag === "Failure") {
-            return status(500, {
-              error: "Failed to store key",
-              message: result.failure.message,
-            });
-          }
-
-          return {
-            key: params.key,
-            value: body.value,
-          };
-        })
+        CloudflareKv.use((kv) => kv.put(params.key, body.value)).pipe(
+          Effect.map(() =>
+            status(200, {
+              key: params.key,
+              value: body.value,
+            })
+          ),
+          Effect.catchTags({
+            PutKvError: (error) =>
+              Effect.succeed(
+                status(500, {
+                  error: "Failed to store key",
+                  message: error.message,
+                })
+              ),
+          })
+        )
       ),
     {
       body: Schema.toStandardSchemaV1(KvBodySchema),
@@ -86,19 +88,18 @@ export const kvRoutes = new Elysia({ prefix: "/kv" })
     "/:key",
     ({ params, status }) =>
       RouteRuntime.runPromise(
-        Effect.gen(function* deleteKvValue() {
-          const kv = yield* CloudflareKv;
-          const result = yield* Effect.result(kv.delete(params.key));
-
-          if (result._tag === "Failure") {
-            return status(500, {
-              error: "Failed to delete key",
-              message: result.failure.message,
-            });
-          }
-
-          return { deleted: params.key };
-        })
+        CloudflareKv.use((kv) => kv.delete(params.key)).pipe(
+          Effect.map(() => status(200, { deleted: params.key })),
+          Effect.catchTags({
+            DeleteKvError: (error) =>
+              Effect.succeed(
+                status(500, {
+                  error: "Failed to delete key",
+                  message: error.message,
+                })
+              ),
+          })
+        )
       ),
     {
       detail: {

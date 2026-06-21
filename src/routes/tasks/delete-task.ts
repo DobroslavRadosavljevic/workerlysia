@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { Elysia } from "elysia";
 
 import { RouteRuntime } from "../../effect/app";
@@ -8,9 +8,11 @@ import { TaskService } from "../../services/tasks";
 
 export const deleteTaskRoute = new Elysia().delete(
   "/tasks/:taskSlug",
-  ({ params }) =>
+  ({ params, status }) =>
     RouteRuntime.runPromise(
-      TaskService.use((tasks) => tasks.delete(params.taskSlug))
+      TaskService.use((tasks) => tasks.delete(params.taskSlug)).pipe(
+        Effect.map((result) => status(200, result))
+      )
     ),
   {
     detail: {

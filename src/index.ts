@@ -3,8 +3,6 @@ import { Schema } from "effect";
 import { Elysia } from "elysia";
 import { CloudflareAdapter } from "elysia/adapter/cloudflare-worker";
 
-import { cachedRoutes } from "./routes/demo/cached";
-import { rateLimitedRoutes } from "./routes/demo/rate-limited";
 import { kvRoutes } from "./routes/storage/kv";
 import { createTaskRoute } from "./routes/tasks/create-task";
 import { deleteTaskRoute } from "./routes/tasks/delete-task";
@@ -40,8 +38,6 @@ const app = new Elysia({ adapter: CloudflareAdapter })
   .use(getTaskRoute)
   .use(deleteTaskRoute)
   .use(kvRoutes)
-  .use(cachedRoutes)
-  .use(rateLimitedRoutes)
   .compile();
 
 export type App = typeof app;

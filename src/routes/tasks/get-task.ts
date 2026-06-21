@@ -2,7 +2,6 @@ import { Effect, Schema } from "effect";
 import { Elysia } from "elysia";
 
 import { RouteRuntime } from "../../effect/app";
-import { recoverTagged } from "../../effect/runtime";
 import { ErrorResponseSchema } from "../../schemas/common";
 import { TaskParamsSchema, TaskSchema } from "../../schemas/task";
 import { TaskService } from "../../services/tasks";
@@ -11,17 +10,17 @@ export const getTaskRoute = new Elysia().get(
   "/tasks/:taskSlug",
   ({ params, status }) =>
     RouteRuntime.runPromise(
-      TaskService.use((tasks) =>
-        tasks.get(params.taskSlug).pipe(
-          recoverTagged("TaskNotFoundError", () =>
+      TaskService.use((tasks) => tasks.get(params.taskSlug)).pipe(
+        Effect.map((result) => status(200, result)),
+        Effect.catchTags({
+          TaskNotFoundError: () =>
             Effect.succeed(
               status(404, {
                 error: "Object not found",
                 success: false,
               })
-            )
-          )
-        )
+            ),
+        })
       )
     ),
   {

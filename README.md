@@ -16,7 +16,6 @@ A modern starter kit for building **type-safe APIs** with [Elysia](https://elysi
 - ✅ **Effect Schema Validation** - Request/response validation with Effect Schema through Elysia Standard Schema support
 - 🧠 **Effect Runtime** - Route business logic and KV IO modeled with Effect v4 beta
 - 🧪 **Vitest Tests** - Route tests use Eden Treaty for type-safe calls; Effect service tests use `@effect/vitest`
-- 🔌 **KV-Powered Plugins** - Built-in cache and rate limiting using Cloudflare KV
 - 🛠️ **Ultracite** - Zero-config linting & formatting (Oxlint + Oxfmt)
 - ✅ **Manual Quality Gate** - `bun run check` runs linting, `tsgo`, Vitest, and audit
 - ⚡ **Bun Runtime** - Fast package manager and Cloudflare Worker runtime companion
@@ -82,14 +81,10 @@ wrangler.jsonc            # ☁️ Cloudflare Worker configuration
 worker-configuration.d.ts # 🧬 Generated Worker runtime/binding types
 vitest.config.ts          # 🧪 Vitest config and Cloudflare runtime alias
 src/
-├── index.ts              # 🏠 App entrypoint - registers routes & plugins
+├── index.ts              # 🏠 App entrypoint - registers routes
 ├── effect/               # 🧠 Effect app layer, runtime, and tagged errors
 ├── services/             # 🧩 Context.Service definitions and Live layers
-├── plugins/              # 🔌 Reusable Elysia plugins
-│   ├── cache.ts          # Response caching with KV
-│   └── rate-limit.ts     # Rate limiting with KV
 ├── routes/               # 📍 API route handlers
-│   ├── demo/             # Demo routes for plugins
 │   ├── storage/          # KV example routes
 │   └── tasks/            # Task CRUD routes
 └── schemas/              # 📐 Effect Schema validation models
@@ -114,8 +109,6 @@ tests/
 | `GET /tasks/:taskSlug`    | 🔎 Demo task detail                     |
 | `DELETE /tasks/:taskSlug` | 🗑️ Demo task deletion                   |
 | `/kv/:key`                | ☁️ KV get, put, and delete examples     |
-| `/demo/cached*`           | 🧊 KV-backed cache macro examples       |
-| `/demo/rate-limited*`     | 🚦 KV-backed rate-limit macro examples  |
 
 The task routes are starter examples with static demo data. Replace them with real persistence before using them as production CRUD endpoints.
 
@@ -184,13 +177,13 @@ import { UserParamsSchema, UserSchema } from "../../schemas/user";
 
 export const getUserRoute = new Elysia().get(
   "/users/:id",
-  ({ params }) =>
+  ({ params, status }) =>
     RouteRuntime.runPromise(
       Effect.succeed({
         email: "john@example.com",
         id: params.id,
         name: "John",
-      })
+      }).pipe(Effect.map((result) => status(200, result)))
     ),
   {
     detail: {
@@ -299,54 +292,6 @@ minimumReleaseAge = 259200
 [install.security]
 scanner = "@socketsecurity/bun-security-scanner"
 ```
-
-## 🔌 Plugins
-
-This starter includes two KV-powered plugins that can be enabled per-route using Elysia macros.
-
-### Cache Plugin
-
-Cache responses in Cloudflare KV with configurable TTL.
-
-```typescript
-import { cachePlugin } from "./plugins/cache";
-
-new Elysia()
-  .use(cachePlugin())
-  .get("/data", () => fetchExpensiveData(), {
-    cache: 300, // Cache for 300 seconds
-  })
-  .get("/no-cache", () => getData()); // No caching (macro not defined)
-```
-
-**Response headers:**
-
-- `x-cache: HIT` - Served from cache
-- `x-cache: MISS` - Fresh response, now cached
-
-### Rate Limit Plugin
-
-Limit requests per client using Cloudflare KV.
-
-```typescript
-import { rateLimitPlugin } from "./plugins/rate-limit";
-
-new Elysia()
-  .use(rateLimitPlugin())
-  .get("/api/data", () => getData(), {
-    rateLimit: { max: 100, window: 60 }, // 100 requests per 60 seconds
-  })
-  .get("/public", () => getPublic()); // No rate limiting (macro not defined)
-```
-
-**Response headers:**
-
-- `x-ratelimit-limit` - Maximum requests allowed
-- `x-ratelimit-remaining` - Requests remaining in window
-- `x-ratelimit-reset` - Seconds until window resets
-- `retry-after` - Seconds to wait (when rate limited)
-
-**Note:** Cloudflare KV has a minimum TTL of 60 seconds.
 
 ## 📚 Resources
 
