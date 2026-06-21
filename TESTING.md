@@ -2,6 +2,8 @@
 
 Workerlysia uses **Vitest** for tests. Do not use Bun's test runner for this project.
 
+The test suite is part of the public reference value of this repo: it shows how to test an Elysia Cloudflare Worker without a network server, how to exercise Effect services and Layers, and how to keep KV plus official upstream API behavior deterministic.
+
 The test setup has two main layers:
 
 - **Route tests** use Eden Treaty for type-safe route calls, with raw `app.handle(new Request(...))` only when intentionally sending invalid requests.
@@ -22,7 +24,8 @@ bun run check      # Run lint, typecheck, tests, and audit
 ```text
 tests/
 ├── mocks/
-│   └── cloudflare-workers.ts # Test-only cloudflare:workers shim
+│   ├── cloudflare-workers.ts # Test-only cloudflare:workers shim
+│   └── minecraft-fetch.ts    # Official Minecraft/Mojang/Piston fetch fixtures
 ├── routes.test.ts            # Eden Treaty + Elysia route tests
 └── services.test.ts          # Effect service/layer tests
 ```
@@ -63,15 +66,15 @@ Treaty maps routes to a tree-like API:
 
 ```typescript
 await api.get(); // GET /
-await api.tasks.get({ query: { isCompleted: "true", page: 1 } }); // GET /tasks
-await api.tasks.post({
-  completed: false,
-  due_date: "2026-06-21",
-  name: "Task",
-  slug: "task",
-}); // POST /tasks
-await api.tasks({ taskSlug: "example-task" }).get(); // GET /tasks/:taskSlug
-await api.kv({ key: "test-key" }).put({ value: "hello" }); // PUT /kv/:key
+await api.minecraft.players({ nameOrUuid: "Notch" }).get(); // GET /minecraft/players/:nameOrUuid
+await api.minecraft.players.resolve.post({
+  usernames: ["Notch", "jeb_"],
+}); // POST /minecraft/players/resolve
+await api.minecraft.profiles({ nameOrUuid: "Notch" }).get({
+  query: { signed: "true" },
+}); // GET /minecraft/profiles/:nameOrUuid?signed=true
+await api.minecraft.versions.get(); // GET /minecraft/versions
+await api.minecraft.versions({ versionId: "1.21.6" }).get(); // GET /minecraft/versions/:versionId
 ```
 
 If a Treaty call does not compile, treat that as useful feedback. Either the route contract changed or the test is trying to send an invalid request.
@@ -94,14 +97,14 @@ import app from "../src/index";
 const rawRequest = (path: string, init?: RequestInit): Promise<Response> =>
   app.handle(new Request(`http://localhost${path}`, init));
 
-it("rejects an invalid task filter", async () => {
-  const response = await rawRequest("/tasks?isCompleted=maybe");
+it("rejects an invalid Minecraft player identifier", async () => {
+  const response = await rawRequest("/minecraft/players/no");
   const body = await response.json();
 
   expect(response.status).toBe(422);
   expect(body).toMatchObject({
-    on: "query",
-    property: "isCompleted",
+    on: "params",
+    property: "nameOrUuid",
     type: "validation",
   });
 });
@@ -115,7 +118,7 @@ Prefer assertions on stable fields like `status`, `type`, `on`, `property`, and 
 
 Vitest runs in Node, but the app imports `cloudflare:workers` for the Worker `env`. `vitest.config.ts` aliases that module to `tests/mocks/cloudflare-workers.ts`.
 
-The current mock provides an in-memory `env.KV` implementation for the app's KV routes.
+The current mock provides an in-memory `env.KV` implementation for cache-backed services. The app does not expose raw public KV routes.
 
 Use `resetTestKv()` in `beforeEach` when a test touches KV-backed behavior:
 
@@ -131,6 +134,21 @@ beforeEach(() => {
 
 When adding a new Cloudflare binding, extend the test shim with the smallest compatible surface needed by tests. Keep the mock deterministic and in memory.
 
+## ⛏️ Official Upstream Mocks
+
+Minecraft proxy tests should use `tests/mocks/minecraft-fetch.ts` and `vi.stubGlobal("fetch", createMinecraftFetchMock())`.
+
+Production code uses Effect's `HttpClient` from `effect/unstable/http`, with `FetchHttpClient.layer` providing the fetch-backed implementation. Service tests for HTTP-backed services should provide that layer and then stub `globalThis.fetch` through Vitest.
+
+The mock fixture only handles official hosts:
+
+- `api.minecraftservices.com`
+- `sessionserver.mojang.com`
+- `textures.minecraft.net`
+- `piston-meta.mojang.com`
+
+Do not add fixtures for third-party Minecraft skin/avatar services. If production code starts calling Crafatar, MCHeads, Minotar, Mineatar, MineSkin, or a similar service, tests should fail.
+
 ## 🧠 Effect Tests
 
 Use `@effect/vitest` for Effect service, layer, and program tests. This keeps assertions inside the Effect runtime and supports layer provisioning.
@@ -139,19 +157,16 @@ Use `@effect/vitest` for Effect service, layer, and program tests. This keeps as
 import { expect, layer } from "@effect/vitest";
 import { Effect } from "effect";
 
-import {
-  TaskService,
-  TaskServiceLive,
-} from "../src/modules/tasks/services/task/service";
+import { MojangApiLive } from "../src/modules/minecraft/services/mojang-api/live";
+import { MojangApiService } from "../src/modules/minecraft/services/mojang-api/service";
 
-layer(TaskServiceLive)("TaskService", (it) => {
-  it.effect("filters completed tasks", () =>
-    Effect.gen(function* filterCompletedTasks() {
-      const tasks = yield* TaskService;
-      const completed = yield* tasks.list("true");
+layer(MojangApiLive)("MojangApiService", (it) => {
+  it.effect("decodes official profile responses", () =>
+    Effect.gen(function* decodeOfficialProfileResponses() {
+      const api = yield* MojangApiService;
+      const profile = yield* api.resolveUsername("Notch");
 
-      expect(completed).toHaveLength(1);
-      expect(completed[0]?.completed).toBe(true);
+      expect(profile.name).toBe("Notch");
     })
   );
 });

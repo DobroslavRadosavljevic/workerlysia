@@ -1,6 +1,8 @@
 # ⚡ Workerlysia
 
-A modern starter kit for building **type-safe APIs** with [Elysia](https://elysiajs.com/) on [Cloudflare Workers](https://workers.cloudflare.com/).
+A public reference project showing how far a small **Cloudflare Worker** can go with [Elysia](https://elysiajs.com/), **Effect**, **Effect Schema**, and **Cloudflare KV**.
+
+The current real-world example is a type-safe **official Minecraft API proxy**. It wraps Mojang, Minecraft Services, Session Server, `textures.minecraft.net`, and Piston metadata without depending on third-party skin/avatar APIs.
 
 [![Bun](https://img.shields.io/badge/Bun-1.3+-black?logo=bun)](https://bun.sh/)
 [![Elysia](https://img.shields.io/badge/Elysia-1.4+-blue)](https://elysiajs.com/)
@@ -11,7 +13,10 @@ A modern starter kit for building **type-safe APIs** with [Elysia](https://elysi
 
 - 🚀 **Elysia Framework** - Ergonomic, type-safe web framework with end-to-end type safety
 - ☁️ **Cloudflare Workers** - Deploy to the edge with zero cold starts
-- 📖 **OpenAPI 3.1** - Auto-generated API documentation at `/docs`
+- ⛏️ **Official Minecraft Proxy** - Wraps Mojang, Minecraft Services, Session Server, textures, and Piston metadata APIs
+- 🧱 **KV-backed Caching** - Caches official JSON metadata through an internal Cloudflare KV service
+- 🖼️ **Skin Texture CDN Route** - Serves official `textures.minecraft.net` PNGs through strict texture-hash routes
+- 📖 **OpenAPI** - Auto-generated API documentation at `/docs`
 - 🔒 **Type Safety** - Full TypeScript support with strict mode
 - ✅ **Effect Schema Validation** - Request/response validation with Effect Schema through Elysia Standard Schema support
 - 🧠 **Effect Runtime** - Route business logic and KV IO modeled with Effect v4 beta
@@ -19,6 +24,18 @@ A modern starter kit for building **type-safe APIs** with [Elysia](https://elysi
 - 🛠️ **Ultracite** - Zero-config linting & formatting (Oxlint + Oxfmt)
 - ✅ **Manual Quality Gate** - `bun run check` runs linting, `tsgo`, Vitest, and audit
 - ⚡ **Bun Runtime** - Fast package manager and Cloudflare Worker runtime companion
+
+## 🧪 What This Demonstrates
+
+Workerlysia is intentionally not another static todo demo. The Minecraft module is a concrete example of patterns that are useful in real Cloudflare Worker APIs:
+
+- 🧩 **Module-first architecture** with route, schema, service, error, utility, type, and constant ownership under `src/modules/<module>/`.
+- 🧠 **Effect-first business logic** using services, tagged errors, Layers, a shared `ManagedRuntime`, Effect Clock/DateTime, and Effect's HTTP client.
+- 📐 **Effect Schema everywhere** for request contracts, response contracts, cache decoding, upstream decoding, and OpenAPI generation through Elysia Standard Schema support.
+- ☁️ **Cloudflare KV as infrastructure**, wrapped behind services instead of exposed as raw public routes.
+- 🧱 **Cache-aware edge API design**, including positive cache hits/misses, best-effort cache writes, immutable texture proxy responses, and official upstream isolation.
+- 🧪 **Type-safe testing** with Eden Treaty for route calls, Vitest for the runner, `@effect/vitest` for services/layers, and deterministic Cloudflare/upstream mocks.
+- 🔐 **Install and supply-chain defaults** with Bun's release-age delay and Socket.dev scanner.
 
 ## 🧭 Current Setup
 
@@ -85,29 +102,32 @@ src/
 ├── effect/               # 🧠 Effect app layer and runtime helpers
 └── modules/              # 🧩 Feature-style module tree
     ├── general/          # 👋 Welcome/root route
+    ├── minecraft/        # ⛏️ Official Minecraft proxy routes, schemas, services, errors
     ├── shared/           # 🤝 Shared schemas and errors
-    ├── storage/          # ☁️ KV route, schemas, service, errors
-    └── tasks/            # 📋 Task routes, schemas, service, errors
+    └── storage/          # ☁️ Internal Cloudflare KV service and tagged errors
 tests/
-├── mocks/                # 🧪 Test-only Cloudflare runtime shims
+├── mocks/                # 🧪 Test-only Cloudflare and official API shims
 ├── routes.test.ts        # 📍 Eden Treaty route tests
 └── services.test.ts      # 🧠 Effect service tests with @effect/vitest
 ```
 
 ## 🗺️ API Surface
 
-| Route                     | Purpose                                 |
-| ------------------------- | --------------------------------------- |
-| `GET /`                   | 👋 Welcome response with docs link      |
-| `GET /docs`               | 📖 Scalar OpenAPI UI                    |
-| `GET /docs/openapi.json`  | 🧾 OpenAPI JSON specification           |
-| `GET /tasks`              | 📋 Demo task list with query validation |
-| `POST /tasks`             | ➕ Demo task creation                   |
-| `GET /tasks/:taskSlug`    | 🔎 Demo task detail                     |
-| `DELETE /tasks/:taskSlug` | 🗑️ Demo task deletion                   |
-| `/kv/:key`                | ☁️ KV get, put, and delete examples     |
+| Route                                      | Purpose                                                   |
+| ------------------------------------------ | --------------------------------------------------------- |
+| `GET /`                                    | 👋 Welcome response with docs link                        |
+| `GET /docs`                                | 📖 Scalar OpenAPI UI                                      |
+| `GET /docs/openapi.json`                   | 🧾 OpenAPI JSON specification                             |
+| `GET /minecraft/players/:nameOrUuid`       | ⛏️ Resolve a Minecraft username or UUID to profile data   |
+| `POST /minecraft/players/resolve`          | 👥 Resolve up to 10 Minecraft usernames in one request    |
+| `GET /minecraft/profiles/:nameOrUuid`      | 🧍 Get a Mojang session profile and decoded texture links |
+| `GET /minecraft/profiles/:nameOrUuid/skin` | 🖼️ Resolve and proxy a player's official skin PNG         |
+| `GET /minecraft/textures/:textureId`       | 🧊 Proxy an immutable official Minecraft texture PNG      |
+| `GET /minecraft/blocked-servers`           | 🚫 Return Mojang's official blocked server hash list      |
+| `GET /minecraft/versions`                  | 📦 List official Minecraft versions from Piston metadata  |
+| `GET /minecraft/versions/:versionId`       | 🔎 Get official Piston metadata for one Minecraft version |
 
-The task routes are starter examples with static demo data. Replace them with real persistence before using them as production CRUD endpoints.
+The proxy intentionally does **not** call third-party skin/avatar services. Official upstream hosts are limited to Minecraft Services, Mojang Session Server, `textures.minecraft.net`, and Piston metadata.
 
 ## 📜 Scripts
 
@@ -216,7 +236,7 @@ const app = new Elysia({ adapter: CloudflareAdapter })
 
 ## ☁️ Cloudflare Bindings
 
-This starter includes a pre-configured KV binding.
+This project includes a pre-configured KV binding used by the internal Minecraft cache service.
 
 > **Important:** The `wrangler.jsonc` file must point to a KV namespace in your Cloudflare account. Replace the example `id` with your own namespace ID before deploying.
 
@@ -241,32 +261,26 @@ Update `wrangler.jsonc` with the generated `id`:
 }
 ```
 
-**Usage:**
-
-Inside `src/modules/storage/api/routes/kv-example.ts`:
+**Usage inside a service:**
 
 ```typescript
 import { Effect } from "effect";
-import { Elysia } from "elysia";
 
-import { RouteRuntime } from "../../../../effect/app";
-import { CloudflareKv } from "../../services/cloudflare-kv/service";
+import { CloudflareKvService } from "../../services/cloudflare-kv/service";
 
-export const myRoute = new Elysia().get("/kv-example", () =>
-  RouteRuntime.runPromise(
-    CloudflareKv.use((kv) =>
-      Effect.gen(function* kvExample() {
-        yield* kv.put("key", "value");
-        const value = yield* kv.get("key");
+export const kvProgram = CloudflareKvService.use((kv) =>
+  Effect.gen(function* kvExample() {
+    yield* kv.put("key", "value");
+    const value = yield* kv.get("key");
 
-        return { value };
-      })
-    )
-  )
+    return { value };
+  })
 );
 ```
 
 `RouteRuntime` is the reusable `ManagedRuntime` exported from `src/effect/app.ts`, so route handlers do not rebuild or re-provide the app layer for every request.
+
+Do not expose raw KV get/put/delete routes as product API. Storage access should stay behind module services such as `MinecraftCacheService`.
 
 ### Regenerate Types
 
@@ -305,21 +319,19 @@ scanner = "@socketsecurity/bun-security-scanner"
 - ☁️ [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
 - 🔧 [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
 - 📐 [Effect Schema](https://effect.website/docs/schema/introduction/)
+- ⛏️ [Minecraft Services API](https://api.minecraftservices.com)
+- 📦 [Piston Version Manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
 
 ## 🔎 Public Source
 
-This repository is public for source visibility and reuse under the MIT license. External issues, feature requests, pull requests, and contribution workflows are not accepted.
-
-## 🔒 Security
-
-Found a vulnerability? Please review our [Security Policy](SECURITY.md) for reporting guidelines.
+This repository is public for source visibility and reuse under the MIT license. It is maintained as an example/reference codebase, not as a community contribution project. External issues, feature requests, pull requests, and contribution workflows are not accepted.
 
 ## 📄 License
 
-MIT License - feel free to use this starter for your own projects!
+MIT License.
 
 ---
 
 <p align="center">
-  Built with 💜 using <a href="https://elysiajs.com/">Elysia</a> and <a href="https://workers.cloudflare.com/">Cloudflare Workers</a>
+  Built with 💜 using <a href="https://elysiajs.com/">Elysia</a>, <a href="https://effect.website/">Effect</a>, and <a href="https://workers.cloudflare.com/">Cloudflare Workers</a>
 </p>

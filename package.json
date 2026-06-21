@@ -2,7 +2,7 @@
   "name": "workerlysia",
   "version": "0.0.1",
   "private": true,
-  "description": "A modern starter kit for building type-safe APIs with Elysia on Cloudflare Workers",
+  "description": "A public reference Cloudflare Worker API using Elysia, Effect, Effect Schema, and KV caching",
   "homepage": "https://github.com/DobroslavRadosavljevic/workerlysia#readme",
   "license": "MIT",
   "author": "Dobroslav Radosavljevic <dobroslav.radosavljevic@gmail.com>",

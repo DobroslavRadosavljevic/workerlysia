@@ -4,11 +4,14 @@ import { Elysia } from "elysia";
 import { CloudflareAdapter } from "elysia/adapter/cloudflare-worker";
 
 import { welcomeRoute } from "./modules/general/api/routes/welcome";
-import { kvRoutes } from "./modules/storage/api/routes/kv";
-import { createTaskRoute } from "./modules/tasks/api/routes/create-task";
-import { deleteTaskRoute } from "./modules/tasks/api/routes/delete-task";
-import { getTaskRoute } from "./modules/tasks/api/routes/get-task";
-import { listTasksRoute } from "./modules/tasks/api/routes/list-tasks";
+import { getMinecraftBlockedServersRoute } from "./modules/minecraft/api/routes/get-blocked-servers";
+import { getMinecraftPlayerRoute } from "./modules/minecraft/api/routes/get-player";
+import { getMinecraftProfileRoute } from "./modules/minecraft/api/routes/get-profile";
+import { getMinecraftSkinRoute } from "./modules/minecraft/api/routes/get-skin";
+import { getMinecraftTextureRoute } from "./modules/minecraft/api/routes/get-texture";
+import { getMinecraftVersionRoute } from "./modules/minecraft/api/routes/get-version";
+import { listMinecraftVersionsRoute } from "./modules/minecraft/api/routes/list-versions";
+import { resolveMinecraftPlayersRoute } from "./modules/minecraft/api/routes/resolve-players";
 
 const app = new Elysia({ adapter: CloudflareAdapter })
   .use(
@@ -16,7 +19,7 @@ const app = new Elysia({ adapter: CloudflareAdapter })
       documentation: {
         info: {
           description:
-            "A modern starter kit for building type-safe APIs with Elysia on Cloudflare Workers",
+            "A public reference Cloudflare Worker API using Elysia, Effect, Effect Schema, and KV caching. The current example proxies official Minecraft APIs only.",
           license: {
             name: "MIT",
           },
@@ -33,11 +36,14 @@ const app = new Elysia({ adapter: CloudflareAdapter })
     })
   )
   .use(welcomeRoute)
-  .use(listTasksRoute)
-  .use(createTaskRoute)
-  .use(getTaskRoute)
-  .use(deleteTaskRoute)
-  .use(kvRoutes)
+  .use(resolveMinecraftPlayersRoute)
+  .use(getMinecraftPlayerRoute)
+  .use(getMinecraftSkinRoute)
+  .use(getMinecraftProfileRoute)
+  .use(getMinecraftTextureRoute)
+  .use(getMinecraftBlockedServersRoute)
+  .use(listMinecraftVersionsRoute)
+  .use(getMinecraftVersionRoute)
   .compile();
 
 export type App = typeof app;

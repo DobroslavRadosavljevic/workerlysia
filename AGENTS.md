@@ -37,11 +37,11 @@ src/
 ├── effect/            # Effect app layer and runtime helpers
 └── modules/           # Feature-style modules with route/schema/service ownership
     ├── general/       # Welcome/root route
+    ├── minecraft/     # Official Minecraft/Mojang/Piston proxy routes, schemas, services, errors
     ├── shared/        # Shared schemas/errors used by multiple modules
-    ├── storage/       # KV route, schemas, service, and tagged errors
-    └── tasks/         # Task routes, schemas, service, and tagged errors
+    └── storage/       # Internal Cloudflare KV service and tagged errors
 tests/
-├── mocks/             # Vitest-only runtime shims
+├── mocks/             # Vitest-only runtime and official API shims
 ├── routes.test.ts     # Elysia route tests through app.handle(Request)
 └── services.test.ts   # Effect service tests with @effect/vitest
 ```
@@ -50,8 +50,14 @@ tests/
 
 - `/` returns the API welcome payload and links to `/docs`.
 - `/docs` serves Scalar/OpenAPI UI, and `/docs/openapi.json` serves the OpenAPI spec.
-- `/tasks` and `/tasks/:taskSlug` are demo CRUD-style routes backed by static/example data.
-- `/kv/:key` reads, writes, and deletes values through the Cloudflare `KV` binding.
+- `/minecraft/players/:nameOrUuid` resolves Minecraft usernames or UUIDs through official Minecraft/Mojang APIs.
+- `/minecraft/players/resolve` resolves up to 10 usernames through the official Minecraft Services bulk lookup endpoint.
+- `/minecraft/profiles/:nameOrUuid` reads official Mojang session profiles and exposes decoded texture metadata without mutating signed properties.
+- `/minecraft/profiles/:nameOrUuid/skin` and `/minecraft/textures/:textureId` proxy official `textures.minecraft.net` PNGs.
+- `/minecraft/blocked-servers` wraps Mojang's official blocked server hash list.
+- `/minecraft/versions` and `/minecraft/versions/:versionId` wrap official Piston metadata.
+- There are no mock/example product routes. Do not add demo CRUD modules or public raw KV get/put/delete routes.
+- Do not call third-party Minecraft skin/avatar services such as Crafatar, MCHeads, Minotar, Mineatar, or MineSkin from production code.
 
 ## ✅ Conventions
 
@@ -63,11 +69,17 @@ tests/
   - `api/routes/` for Elysia route files.
   - `api/errors/` for route-specific API error schemas or response bodies.
   - `schema/api/` for request and response schemas, normally split as `body.ts`, `params.ts`, `query.ts`, `response.ts`, and `shared.ts` when useful.
-  - `services/<service>/service.ts` for `Context.Service` definitions and Live layers.
-  - `services/<service>/errors/`, `services/<service>/utils/`, `services/<service>/types.ts`, or module-level `errors/` only when the code actually needs them.
-- Keep service helper functions pure inside `utils/`. IO belongs in `service.ts` or data access files.
+  - `services/<service>/service.ts` for the `Context.Service` class only.
+  - `services/<service>/live.ts` for the `*Live` Layer and implementation-side I/O/business orchestration.
+  - Module-level `types.ts` for DTO aliases and reusable type-only contracts that are shared outside one service definition.
+  - Module-level `constants.ts` for reusable string, numeric, URL, TTL, and regex constants.
+  - Module-level `utils/` for pure non-I/O helpers, with one exported utility per file.
+  - `services/<service>/errors/`, `services/<service>/utils/`, or module-level `errors/` only when the code actually needs them.
+- Keep `service.ts` files small and declarative. Do not put Live layers, HTTP/KV/database calls, cache orchestration, or helper implementations in `service.ts`.
+- Keep pure helpers in module `utils/`. I/O and business orchestration belong in `live.ts` or route files depending on ownership.
 - Avoid barrel and pure re-export files. Import the specific file that owns the symbol.
 - Shared cross-module contracts go under `src/modules/shared/...`; do not recreate top-level `src/routes`, `src/services`, or `src/schemas` folders.
+- Official upstream integrations belong behind module services. For Minecraft, keep upstream calls limited to Minecraft Services, Mojang Session Server, `textures.minecraft.net`, and Piston metadata unless the product decision changes explicitly.
 
 ### 📍 Route Files
 
@@ -127,14 +139,19 @@ export const MySchema = Schema.Struct({
 - Map successful route results inside the Effect pipe with `Effect.map((result) => status(200, result))`.
 - Map recoverable route failures inline with `Effect.catchTags({ ... })` and return `Effect.succeed(status(code, body))` from catch handlers.
 - Define dependencies as `Context.Service` classes under `src/modules/<module>/services/<service>/service.ts`.
-- Provide implementations as `*Live` layers and compose them in `src/effect/app.ts`.
+- Name service tag classes with a `Service` suffix, such as `MojangApiService`. Do not double-suffix names that already end in `Service`, such as `MinecraftService`.
+- Inline each service shape directly in the `Context.Service<..., { ... }>()` declaration. Do not export separate shape interfaces unless a concrete reuse appears outside the service tag.
+- Provide implementations as `*Live` layers in `services/<service>/live.ts` and compose them in `src/effect/app.ts`.
 - Use `Schema.TaggedErrorClass` classes under the owning module's `errors/` folder, or a service-local `errors/` folder, for recoverable domain/IO failures so constructor payload properties are Effect Schema-backed.
 - Give distinct failing operations distinct tagged error classes, such as `GetKvError`, `PutKvError`, and `DeleteKvError`; do not use a generic error with an `operation` field.
 - Construct operation-specific tagged errors inline at the failing boundary; do not add local error-constructor wrappers like `kvError(...)`.
 - Use `Effect.gen`, `Effect.succeed`, `Effect.try`, `Effect.tryPromise`, `Effect.map`, `Effect.catchTag`, `Effect.catchTags`, and `Effect.catchCause` for business logic, parsing, async IO, and recoverable errors.
 - Use Effect's clock-backed APIs for current time inside Effect code: `Clock.currentTimeMillis` for numeric time and `DateTime.now` plus `DateTime.formatIso*` for formatted dates. Do not call `Date.now()` or `new Date()` as the time source in services or routes.
-- Use `CloudflareKv` from `src/modules/storage/services/cloudflare-kv/service.ts` for KV operations instead of calling `env.KV` directly in routes.
+- Use Effect's HTTP client from `effect/unstable/http` for outgoing HTTP calls. Provide `FetchHttpClient.layer` at the runtime/test layer and do not call raw `fetch(...)` from `src/`.
+- Use `CloudflareKvService` from `src/modules/storage/services/cloudflare-kv/service.ts` for KV operations instead of calling `env.KV` directly in routes.
 - Use `Schema.decodeUnknownEffect(...)` when data comes from storage or JSON parsing and needs runtime validation.
+- Keep cache writes best-effort when an upstream request already succeeded. A KV write failure should not turn a good official API response into a failed route unless the route explicitly owns persistence semantics.
+- Import service tags from `services/<service>/service.ts` and Live layers from `services/<service>/live.ts`; do not re-export them from a barrel.
 
 ### 🧪 Testing
 
@@ -147,12 +164,13 @@ export const MySchema = Schema.Struct({
 - Keep Cloudflare runtime shims under `tests/mocks/`; do not leak test-only mocks into `src/`.
 - Add tests for schema validation failures when adding request schemas.
 - Cover success behavior, validation failures, recoverable tagged errors, route-owned headers, and KV side effects when the route owns them.
+- Minecraft tests must mock official upstream hosts only. If code calls a third-party Minecraft skin/avatar host, the test should fail instead of silently accepting it.
 
 ### ☁️ Cloudflare Bindings
 
 - Worker bindings are configured in `wrangler.jsonc`
 - Binding types are generated with `bun run cf-typegen` into `worker-configuration.d.ts`; runtime types come from `@cloudflare/workers-types`.
-- KV access is wrapped by `CloudflareKvLive` in `src/modules/storage/services/cloudflare-kv/service.ts`, which imports Cloudflare's Worker `env`
+- KV access is wrapped by `CloudflareKvLive` in `src/modules/storage/services/cloudflare-kv/live.ts`, which imports Cloudflare's Worker `env`
 - Use `.dev.vars` for local Worker secrets and variables. Keep `.dev.vars` out of git and use `.dev.vars.example` as the committed template.
 - Use `wrangler secret put <NAME>` for deployed secrets. Do not store sensitive values in `vars` inside `wrangler.jsonc`.
 - `compatibility_date` is intentionally current and should be followed by `bun run cf-typegen` after changes.
