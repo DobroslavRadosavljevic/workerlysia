@@ -26,29 +26,49 @@ Thank you for your interest in contributing! This guide will help you get starte
    bun install
    ```
 
-4. **Create a branch**
+   Bun will apply the repo's `bunfig.toml` install policy:
+
+   - 🔐 Three-day `minimumReleaseAge`
+   - 🧪 Socket.dev package scanning through `@socketsecurity/bun-security-scanner`
+   - 🗝️ Optional `SOCKET_API_KEY` support for Socket.dev organization settings
+
+4. **Set up local Worker variables if needed**
+
+   ```bash
+   cp .dev.vars.example .dev.vars
+   ```
+
+   Do not commit `.dev.vars`. Use Cloudflare secrets for deployed sensitive values.
+
+5. **Create a branch**
 
    ```bash
    git checkout -b feature/your-feature-name
    ```
 
-5. **Make your changes**
+6. **Make your changes**
 
-6. **Run checks**
+7. **Run checks**
 
    ```bash
-   bun run lint
    bun run format
-   bun run typecheck
+   bun run check
    ```
 
-7. **Commit your changes**
+   If you changed `wrangler.jsonc` bindings or the compatibility date, regenerate Worker types:
+
+   ```bash
+   bun run cf-typegen
+   ```
+
+8. **Commit your changes**
 
    ```bash
    git commit -m "feat: add your feature description"
    ```
 
-8. **Push and create a PR**
+9. **Push and create a PR**
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -67,7 +87,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## 🔍 Code Style
 
-This project uses [Ultracite](https://github.com/haydenbleasel/ultracite) for linting and formatting:
+This project uses [Ultracite](https://github.com/haydenbleasel/ultracite) with Oxlint and Oxfmt:
 
 ```bash
 # Check for issues
@@ -78,6 +98,19 @@ bun run format
 ```
 
 Please ensure your code passes all checks before submitting a PR.
+
+Type checking runs through Microsoft's native TypeScript preview CLI:
+
+```bash
+bun run typecheck # tsgo --noEmit
+```
+
+## ☁️ Cloudflare Worker Notes
+
+- `wrangler.jsonc` is the source of truth for Worker bindings and compatibility settings.
+- `worker-configuration.d.ts` is generated. Update it with `bun run cf-typegen`; do not edit it by hand.
+- The configured `KV` binding powers the KV examples, cache plugin, and rate-limit plugin.
+- Route files should stay small Elysia instances registered from `src/index.ts`.
 
 ## 🐛 Reporting Bugs
 

@@ -1,0 +1,7 @@
+[install]
+# Avoid resolving packages published very recently, reducing exposure to npm
+# account takeovers and same-day supply-chain incidents during normal installs.
+minimumReleaseAge = 259200
+
+[install.security]
+scanner = "@socketsecurity/bun-security-scanner"

@@ -1,0 +1,7 @@
+# Local Worker secrets and variables for Wrangler.
+# Copy this file to .dev.vars and fill in local-only values.
+#
+# Do not commit .dev.vars.
+# Use wrangler secret put <NAME> for deployed secrets.
+
+# API_KEY="your-local-api-key"

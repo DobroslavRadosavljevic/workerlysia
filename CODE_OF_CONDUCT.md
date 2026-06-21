@@ -1,5 +1,9 @@
 # 📜 Code of Conduct
 
+## ⚡ Project Context
+
+Workerlysia is a Cloudflare Worker starter for Elysia, Bun, OpenAPI, KV examples, and secure install workflows. Collaboration should keep the starter friendly, accurate, and safe for developers to reuse.
+
 ## Our Pledge
 
 We pledge to make participation in our project a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
