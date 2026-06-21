@@ -24,6 +24,7 @@
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "audit": "bun audit",
     "check": "bun run lint && bun run typecheck && bun run test && bun audit"
   },
   "dependencies": {

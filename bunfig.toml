@@ -1,6 +1,12 @@
 [install]
-# Avoid resolving packages published very recently, reducing exposure to npm
-# account takeovers and same-day supply-chain incidents during normal installs.
+# Keep text lockfiles explicit and reviewable.
+saveTextLockfile = true
+
+# Save exact versions for future bun add operations.
+# This reduces surprise dependency drift; updates should happen through bun update.
+exact = true
+
+# Keep the existing supply-chain delay.
 minimumReleaseAge = 259200
 
 [install.security]
