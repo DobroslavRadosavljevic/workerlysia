@@ -16,7 +16,6 @@ We take security seriously. If you discover a security vulnerability, please fol
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
-   - Suggested fix (if any)
 
 ## ⏱️ Response Timeline
 
@@ -45,7 +44,7 @@ When using this starter kit:
 3. **Cloudflare Worker Configuration**
    - Keep `wrangler.jsonc` as the source of truth for bindings
    - Run `bun run cf-typegen` after binding or compatibility-date changes
-   - Treat `worker-configuration.d.ts` as generated output
+   - Treat `worker-configuration.d.ts` as generated binding output
 
 4. **API Security**
    - Validate all inputs using Effect Schema through Elysia Standard Schema support
@@ -57,7 +56,4 @@ When using this starter kit:
 ## 📜 Disclosure Policy
 
 - We will acknowledge receipt of your report
-- We will work with you to understand and resolve the issue
-- We will credit you in the fix announcement (unless you prefer anonymity)
-
-Thank you for helping keep Workerlysia secure! 💜
+- We will investigate and resolve valid reports based on severity

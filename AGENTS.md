@@ -27,22 +27,19 @@ A **Cloudflare Worker** API built with **Elysia** framework and **Bun** runtime.
 | `bun run test`       | Run Vitest once                     |
 | `bun run test:watch` | Run Vitest in watch mode            |
 | `bun run check`      | Run lint, typecheck, tests, audit   |
-| `bun run cf-typegen` | Generate Cloudflare Worker types    |
+| `bun run cf-typegen` | Generate Cloudflare binding types   |
 
 ## 📁 Project Structure
 
 ```
 src/
-├── index.ts           # App entrypoint - registers routes
-├── effect/            # Effect app layer, runtime helpers, and tagged errors
-├── services/          # Context.Service definitions plus Live layers
-├── routes/            # API route handlers (one file per endpoint)
-│   ├── storage/       # KV example routes
-│   └── tasks/         # Task CRUD routes
-└── schemas/           # Effect Schema models for validation/OpenAPI
-    ├── common.ts
-    ├── kv.ts
-    └── task.ts
+├── index.ts           # App entrypoint - registers module routes
+├── effect/            # Effect app layer and runtime helpers
+└── modules/           # Feature-style modules with route/schema/service ownership
+    ├── general/       # Welcome/root route
+    ├── shared/        # Shared schemas/errors used by multiple modules
+    ├── storage/       # KV route, schemas, service, and tagged errors
+    └── tasks/         # Task routes, schemas, service, and tagged errors
 tests/
 ├── mocks/             # Vitest-only runtime shims
 ├── routes.test.ts     # Elysia route tests through app.handle(Request)
@@ -58,6 +55,20 @@ tests/
 
 ## ✅ Conventions
 
+### 🧩 Module Layout
+
+- Put application code under `src/modules/<module>/...`.
+- Do not create `public`, `private`, or `internal` surface folders. Workerlysia has one HTTP surface, so module content lives directly below `src/modules/<module>/`.
+- Use this shape when a module needs the relevant concept:
+  - `api/routes/` for Elysia route files.
+  - `api/errors/` for route-specific API error schemas or response bodies.
+  - `schema/api/` for request and response schemas, normally split as `body.ts`, `params.ts`, `query.ts`, `response.ts`, and `shared.ts` when useful.
+  - `services/<service>/service.ts` for `Context.Service` definitions and Live layers.
+  - `services/<service>/errors/`, `services/<service>/utils/`, `services/<service>/types.ts`, or module-level `errors/` only when the code actually needs them.
+- Keep service helper functions pure inside `utils/`. IO belongs in `service.ts` or data access files.
+- Avoid barrel and pure re-export files. Import the specific file that owns the symbol.
+- Shared cross-module contracts go under `src/modules/shared/...`; do not recreate top-level `src/routes`, `src/services`, or `src/schemas` folders.
+
 ### 📍 Route Files
 
 - Each route is a separate Elysia instance exported from its own file
@@ -68,7 +79,7 @@ tests/
 import { Effect, Schema } from "effect";
 import { Elysia } from "elysia";
 
-import { RouteRuntime } from "./effect/app";
+import { RouteRuntime } from "../../../../effect/app";
 
 export const myRoute = new Elysia().get(
   "/path",
@@ -93,7 +104,7 @@ export const myRoute = new Elysia().get(
 
 ### 📐 Schemas
 
-- Define schemas in `src/schemas/` using Effect Schema
+- Define schemas in the owning module's `schema/api/` folder using Effect Schema
 - Pass schemas to Elysia inline with `Schema.toStandardSchemaV1(...)`; do not add a local wrapper for route schemas
 - Keep `mapJsonSchema.effect` in `src/index.ts` as an inline `(schema: Schema.Top) => Schema.toJsonSchemaDocument(schema).schema` callback so OpenAPI can render Effect schemas
 - Use descriptive examples and format hints for OpenAPI documentation
@@ -115,14 +126,14 @@ export const MySchema = Schema.Struct({
 - Keep route pipes inline. Do not pass Elysia `status` into helper functions.
 - Map successful route results inside the Effect pipe with `Effect.map((result) => status(200, result))`.
 - Map recoverable route failures inline with `Effect.catchTags({ ... })` and return `Effect.succeed(status(code, body))` from catch handlers.
-- Define dependencies as `Context.Service` classes under `src/services/`.
+- Define dependencies as `Context.Service` classes under `src/modules/<module>/services/<service>/service.ts`.
 - Provide implementations as `*Live` layers and compose them in `src/effect/app.ts`.
-- Use `Schema.TaggedErrorClass` classes under `src/effect/errors/` for recoverable domain/IO failures so constructor payload properties are Effect Schema-backed.
+- Use `Schema.TaggedErrorClass` classes under the owning module's `errors/` folder, or a service-local `errors/` folder, for recoverable domain/IO failures so constructor payload properties are Effect Schema-backed.
 - Give distinct failing operations distinct tagged error classes, such as `GetKvError`, `PutKvError`, and `DeleteKvError`; do not use a generic error with an `operation` field.
 - Construct operation-specific tagged errors inline at the failing boundary; do not add local error-constructor wrappers like `kvError(...)`.
 - Use `Effect.gen`, `Effect.succeed`, `Effect.try`, `Effect.tryPromise`, `Effect.map`, `Effect.catchTag`, `Effect.catchTags`, and `Effect.catchCause` for business logic, parsing, async IO, and recoverable errors.
 - Use Effect's clock-backed APIs for current time inside Effect code: `Clock.currentTimeMillis` for numeric time and `DateTime.now` plus `DateTime.formatIso*` for formatted dates. Do not call `Date.now()` or `new Date()` as the time source in services or routes.
-- Use `CloudflareKv` from `src/services/cloudflare-kv.ts` for KV operations instead of calling `env.KV` directly in routes.
+- Use `CloudflareKv` from `src/modules/storage/services/cloudflare-kv/service.ts` for KV operations instead of calling `env.KV` directly in routes.
 - Use `Schema.decodeUnknownEffect(...)` when data comes from storage or JSON parsing and needs runtime validation.
 
 ### 🧪 Testing
@@ -140,8 +151,8 @@ export const MySchema = Schema.Struct({
 ### ☁️ Cloudflare Bindings
 
 - Worker bindings are configured in `wrangler.jsonc`
-- Types are generated with `bun run cf-typegen` into `worker-configuration.d.ts`
-- KV access is wrapped by `CloudflareKvLive` in `src/services/cloudflare-kv.ts`, which imports Cloudflare's Worker `env`
+- Binding types are generated with `bun run cf-typegen` into `worker-configuration.d.ts`; runtime types come from `@cloudflare/workers-types`.
+- KV access is wrapped by `CloudflareKvLive` in `src/modules/storage/services/cloudflare-kv/service.ts`, which imports Cloudflare's Worker `env`
 - Use `.dev.vars` for local Worker secrets and variables. Keep `.dev.vars` out of git and use `.dev.vars.example` as the committed template.
 - Use `wrangler secret put <NAME>` for deployed secrets. Do not store sensitive values in `vars` inside `wrangler.jsonc`.
 - `compatibility_date` is intentionally current and should be followed by `bun run cf-typegen` after changes.
@@ -161,7 +172,7 @@ export const MySchema = Schema.Struct({
 
 - Oxlint config lives in `oxlint.config.ts` and extends `ultracite/oxlint/core`.
 - Oxfmt config lives in `oxfmt.config.ts` and extends `ultracite/oxfmt`.
-- The generated `worker-configuration.d.ts` file is ignored by Oxlint/Oxfmt and should only be changed through `bun run cf-typegen`.
+- The generated `worker-configuration.d.ts` file is binding-only, ignored by Oxlint/Oxfmt, and should only be changed through `bun run cf-typegen`.
 - There is no `.claude` project config; use this `AGENTS.md` file as the agent-facing source of truth.
 
 ## ✅ Quality Gate

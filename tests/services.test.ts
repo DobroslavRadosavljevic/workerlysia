@@ -1,7 +1,10 @@
 import { expect, layer } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { TaskService, TaskServiceLive } from "../src/services/tasks";
+import {
+  TaskService,
+  TaskServiceLive,
+} from "../src/modules/tasks/services/task/service";
 
 layer(TaskServiceLive)("TaskService", (it) => {
   it.effect("filters completed tasks inside an Effect test layer", () =>

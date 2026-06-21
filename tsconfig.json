@@ -17,8 +17,8 @@
     "noImplicitOverride": true,
     "types": [
       "./worker-configuration.d.ts",
-      "@types/bun",
-      "@types/service-worker-mock"
+      "@cloudflare/workers-types",
+      "@types/bun"
     ]
   },
   "exclude": ["node_modules", "dist"],

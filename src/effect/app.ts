@@ -1,7 +1,7 @@
 import { Layer, ManagedRuntime } from "effect";
 
-import { CloudflareKvLive } from "../services/cloudflare-kv";
-import { TaskServiceLive } from "../services/tasks";
+import { CloudflareKvLive } from "../modules/storage/services/cloudflare-kv/service";
+import { TaskServiceLive } from "../modules/tasks/services/task/service";
 
 const AppLayer = Layer.mergeAll(CloudflareKvLive, TaskServiceLive);
 

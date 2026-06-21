@@ -3,12 +3,12 @@ import { Schema } from "effect";
 import { Elysia } from "elysia";
 import { CloudflareAdapter } from "elysia/adapter/cloudflare-worker";
 
-import { kvRoutes } from "./routes/storage/kv";
-import { createTaskRoute } from "./routes/tasks/create-task";
-import { deleteTaskRoute } from "./routes/tasks/delete-task";
-import { getTaskRoute } from "./routes/tasks/get-task";
-import { listTasksRoute } from "./routes/tasks/list-tasks";
-import { welcomeRoute } from "./routes/welcome";
+import { welcomeRoute } from "./modules/general/api/routes/welcome";
+import { kvRoutes } from "./modules/storage/api/routes/kv";
+import { createTaskRoute } from "./modules/tasks/api/routes/create-task";
+import { deleteTaskRoute } from "./modules/tasks/api/routes/delete-task";
+import { getTaskRoute } from "./modules/tasks/api/routes/get-task";
+import { listTasksRoute } from "./modules/tasks/api/routes/list-tasks";
 
 const app = new Elysia({ adapter: CloudflareAdapter })
   .use(

@@ -1,0 +1,26 @@
+import { Effect, Schema } from "effect";
+import { Elysia } from "elysia";
+
+import { RouteRuntime } from "../../../../effect/app";
+import { WelcomeResponseSchema } from "../../schema/api/response";
+
+export const welcomeRoute = new Elysia().get(
+  "/",
+  ({ status }) =>
+    RouteRuntime.runPromise(
+      Effect.succeed({
+        docs: "/docs",
+        message: "Welcome to Workerlysia API",
+        version: "1.0.0",
+      }).pipe(Effect.map((result) => status(200, result)))
+    ),
+  {
+    detail: {
+      summary: "Welcome",
+      tags: ["General"],
+    },
+    response: {
+      200: Schema.toStandardSchemaV1(WelcomeResponseSchema),
+    },
+  }
+);
