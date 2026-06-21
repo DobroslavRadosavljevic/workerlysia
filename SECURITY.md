@@ -48,7 +48,8 @@ When using this starter kit:
    - Treat `worker-configuration.d.ts` as generated output
 
 4. **API Security**
-   - Validate all inputs using Elysia schemas
+   - Validate all inputs using Effect Schema through Elysia Standard Schema support
+   - Decode untrusted stored data with `Schema.decodeUnknownEffect(...)`
    - Implement rate limiting for production
    - Use HTTPS in production
    - Avoid exposing internal error details in public responses

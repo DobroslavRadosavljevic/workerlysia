@@ -1,24 +1,21 @@
+import { Schema } from "effect";
 import { Elysia } from "elysia";
 
-import { Task } from "../../schemas/task";
+import { RouteRuntime } from "../../effect/app";
+import { TaskSchema } from "../../schemas/task";
+import { TaskService } from "../../services/tasks";
 
 export const createTaskRoute = new Elysia().post(
   "/tasks",
-  ({ body: _body }) => ({
-    completed: false,
-    description: "this needs to be done",
-    due_date: new Date().toISOString().slice(0, 10),
-    name: "my task",
-    slug: "my-task",
-  }),
+  () => RouteRuntime.runPromise(TaskService.use((tasks) => tasks.create())),
   {
-    body: Task,
+    body: Schema.toStandardSchemaV1(TaskSchema),
     detail: {
       summary: "Create a new Task",
       tags: ["Tasks"],
     },
     response: {
-      200: Task,
+      200: Schema.toStandardSchemaV1(TaskSchema),
     },
   }
 );

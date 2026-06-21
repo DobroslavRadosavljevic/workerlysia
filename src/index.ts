@@ -1,4 +1,5 @@
 import { openapi } from "@elysiajs/openapi";
+import { Schema } from "effect";
 import { Elysia } from "elysia";
 import { CloudflareAdapter } from "elysia/adapter/cloudflare-worker";
 
@@ -25,6 +26,10 @@ const app = new Elysia({ adapter: CloudflareAdapter })
           version: "1.0.0",
         },
       },
+      mapJsonSchema: {
+        effect: (schema: Schema.Top) =>
+          Schema.toJsonSchemaDocument(schema).schema,
+      },
       path: "/docs",
       specPath: "/docs/openapi.json",
     })
@@ -38,5 +43,7 @@ const app = new Elysia({ adapter: CloudflareAdapter })
   .use(cachedRoutes)
   .use(rateLimitedRoutes)
   .compile();
+
+export type App = typeof app;
 
 export default app;

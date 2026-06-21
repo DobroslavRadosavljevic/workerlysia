@@ -1,5 +1,9 @@
-import { env } from "cloudflare:workers";
+import { Effect } from "effect";
 import { Elysia } from "elysia";
+
+import { RouteRuntime } from "../effect/app";
+import { recoverTagged } from "../effect/runtime";
+import { RateLimitService } from "../services/rate-limit";
 
 export interface RateLimitOptions {
   /**
@@ -28,14 +32,6 @@ interface RateLimitConfig {
   window: number;
 }
 
-interface RateLimitResult {
-  current: number;
-  exceeded: boolean;
-  key: string;
-  retryAfter: number;
-}
-
-const MIN_TTL = 60;
 const DEFAULT_MAX = 100;
 const DEFAULT_WINDOW = 60;
 const DEFAULT_PREFIX = "ratelimit";
@@ -50,37 +46,6 @@ const getRateLimitKey = (
   identifier: string,
   path: string
 ): string => `${prefix}:${identifier}:${path}`;
-
-const checkRateLimit = async (
-  rateLimitKey: string,
-  max: number,
-  window: number
-): Promise<RateLimitResult> => {
-  const now = Math.floor(Date.now() / 1000);
-  const windowStart = now - (now % window);
-  const key = `${rateLimitKey}:${windowStart}`;
-
-  try {
-    const currentStr = await env.KV.get(key);
-    const parsed = currentStr ? Number.parseInt(currentStr, 10) : 0;
-    const current = Number.isNaN(parsed) ? 0 : parsed;
-
-    return {
-      current,
-      exceeded: current >= max,
-      key,
-      retryAfter: windowStart + window - now,
-    };
-  } catch {
-    // Fail open: if KV read fails, allow the request
-    return {
-      current: 0,
-      exceeded: false,
-      key,
-      retryAfter: windowStart + window - now,
-    };
-  }
-};
 
 /**
  * Rate limit plugin for Elysia using Cloudflare KV
@@ -117,12 +82,33 @@ export const rateLimitPlugin = (options: RateLimitOptions = {}) => {
           const max = typeof config === "object" ? config.max : defaultMax;
           const window =
             typeof config === "object" ? config.window : defaultWindow;
-          const result = await checkRateLimit(rateLimitKey, max, window);
+          const result = await RouteRuntime.runPromise(
+            RateLimitService.use((rateLimit) =>
+              rateLimit.check({ key: rateLimitKey, max, window }).pipe(
+                recoverTagged("RateLimitExceededError", (error) =>
+                  Effect.succeed({
+                    _tag: "Exceeded" as const,
+                    max: error.max,
+                    retryAfter: error.retryAfter,
+                  })
+                ),
+                Effect.map((state) =>
+                  "_tag" in state
+                    ? state
+                    : ({
+                        _tag: "Allowed" as const,
+                        current: state.current,
+                        retryAfter: state.retryAfter,
+                      } as const)
+                )
+              )
+            )
+          );
 
           set.headers["x-ratelimit-limit"] = String(max);
           set.headers["x-ratelimit-reset"] = String(result.retryAfter);
 
-          if (result.exceeded) {
+          if (result._tag === "Exceeded") {
             set.headers["x-ratelimit-remaining"] = "0";
             set.headers["retry-after"] = String(result.retryAfter);
             return status(429, {
@@ -134,14 +120,6 @@ export const rateLimitPlugin = (options: RateLimitOptions = {}) => {
           set.headers["x-ratelimit-remaining"] = String(
             max - result.current - 1
           );
-
-          try {
-            await env.KV.put(result.key, String(result.current + 1), {
-              expirationTtl: Math.max(MIN_TTL, window),
-            });
-          } catch {
-            // Fail open: if counter increment fails, request still proceeds
-          }
         },
       }),
     });

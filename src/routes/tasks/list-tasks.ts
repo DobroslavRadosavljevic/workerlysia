@@ -1,37 +1,24 @@
-import { Elysia, t } from "elysia";
+import { Schema } from "effect";
+import { Elysia } from "elysia";
 
-import { Task } from "../../schemas/task";
+import { RouteRuntime } from "../../effect/app";
+import { ListTasksQuerySchema, TaskListSchema } from "../../schemas/task";
+import { TaskService } from "../../services/tasks";
 
 export const listTasksRoute = new Elysia().get(
   "/tasks",
-  ({ query: _query }) => [
-    {
-      completed: false,
-      due_date: "2025-01-05",
-      name: "Clean my room",
-      slug: "clean-room",
-    },
-    {
-      completed: true,
-      description: "Lorem Ipsum",
-      due_date: "2022-12-24",
-      name: "Build something awesome with Cloudflare Workers",
-      slug: "cloudflare-workers",
-    },
-  ],
+  ({ query }) =>
+    RouteRuntime.runPromise(
+      TaskService.use((tasks) => tasks.list(query.isCompleted))
+    ),
   {
     detail: {
       summary: "List Tasks",
       tags: ["Tasks"],
     },
-    query: t.Object({
-      isCompleted: t.Optional(
-        t.Boolean({ description: "Filter by completed flag" })
-      ),
-      page: t.Number({ default: 1, description: "Page number" }),
-    }),
+    query: Schema.toStandardSchemaV1(ListTasksQuerySchema),
     response: {
-      200: t.Array(Task),
+      200: Schema.toStandardSchemaV1(TaskListSchema),
     },
   }
 );

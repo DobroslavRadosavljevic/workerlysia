@@ -1,44 +1,38 @@
-import { Elysia, t } from "elysia";
+import { Effect, Schema } from "effect";
+import { Elysia } from "elysia";
 
-import { Task } from "../../schemas/task";
+import { RouteRuntime } from "../../effect/app";
+import { recoverTagged } from "../../effect/runtime";
+import { ErrorResponseSchema } from "../../schemas/common";
+import { TaskParamsSchema, TaskSchema } from "../../schemas/task";
+import { TaskService } from "../../services/tasks";
 
 export const getTaskRoute = new Elysia().get(
   "/tasks/:taskSlug",
-  ({ params, status }) => {
-    const { taskSlug } = params;
-
-    // Implement your own object fetch here
-    const exists = true;
-
-    if (!exists) {
-      return status(404, {
-        error: "Object not found",
-        success: false,
-      });
-    }
-
-    return {
-      completed: false,
-      description: "this needs to be done",
-      due_date: new Date().toISOString().slice(0, 10),
-      name: "my task",
-      slug: taskSlug,
-    };
-  },
+  ({ params, status }) =>
+    RouteRuntime.runPromise(
+      TaskService.use((tasks) =>
+        tasks.get(params.taskSlug).pipe(
+          recoverTagged("TaskNotFoundError", () =>
+            Effect.succeed(
+              status(404, {
+                error: "Object not found",
+                success: false,
+              })
+            )
+          )
+        )
+      )
+    ),
   {
     detail: {
       summary: "Get a single Task by slug",
       tags: ["Tasks"],
     },
-    params: t.Object({
-      taskSlug: t.String({ description: "Task slug" }),
-    }),
+    params: Schema.toStandardSchemaV1(TaskParamsSchema),
     response: {
-      200: Task,
-      404: t.Object({
-        error: t.String(),
-        success: t.Boolean(),
-      }),
+      200: Schema.toStandardSchemaV1(TaskSchema),
+      404: Schema.toStandardSchemaV1(ErrorResponseSchema),
     },
   }
 );

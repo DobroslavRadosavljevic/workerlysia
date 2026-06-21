@@ -52,6 +52,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 
    ```bash
    bun run format
+   bun run test
    bun run check
    ```
 
@@ -105,12 +106,26 @@ Type checking runs through Microsoft's native TypeScript preview CLI:
 bun run typecheck # tsgo --noEmit
 ```
 
+Tests run with Vitest, not Bun's test runner:
+
+```bash
+bun run test # vitest run
+```
+
+Use Eden Treaty with the local Elysia app for type-safe route tests, raw `app.handle(new Request(...))` for intentionally invalid request-shape tests, and `@effect/vitest` for Effect service or layer tests. Read [TESTING.md](./TESTING.md) before adding tests; it covers route helpers, validation failures, Cloudflare runtime mocks, cache/rate-limit sequencing, and Effect layer tests.
+
 ## ☁️ Cloudflare Worker Notes
 
 - `wrangler.jsonc` is the source of truth for Worker bindings and compatibility settings.
 - `worker-configuration.d.ts` is generated. Update it with `bun run cf-typegen`; do not edit it by hand.
 - The configured `KV` binding powers the KV examples, cache plugin, and rate-limit plugin.
 - Route files should stay small Elysia instances registered from `src/index.ts`.
+- Use Effect Schema in `src/schemas/` and pass schemas to Elysia inline with `Schema.toStandardSchemaV1(...)`.
+- Keep route business logic and Cloudflare KV IO in `Context.Service` modules under `src/services/`.
+- Provide service implementations with `*Live` layers and compose them in `src/effect/app.ts`.
+- Use tagged errors from `src/effect/errors/` for recoverable failures.
+- Run service-backed Effect programs at the Elysia boundary with `RouteRuntime.runPromise(...)`, using the reusable app `ManagedRuntime`.
+- Use `CloudflareKv` / `CloudflareKvLive` instead of calling `env.KV` directly from routes or plugins.
 
 ## 🐛 Reporting Bugs
 

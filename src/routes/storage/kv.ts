@@ -1,71 +1,114 @@
-import { env } from "cloudflare:workers";
-import { Elysia, t } from "elysia";
+import { Effect, Schema } from "effect";
+import { Elysia } from "elysia";
+
+import { RouteRuntime } from "../../effect/app";
+import {
+  ErrorMessageResponseSchema,
+  ErrorOnlyResponseSchema,
+} from "../../schemas/common";
+import {
+  KeyParamsSchema,
+  KvBodySchema,
+  KvDeletedResponseSchema,
+  KvValueResponseSchema,
+} from "../../schemas/kv";
+import { CloudflareKv } from "../../services/cloudflare-kv";
 
 export const kvRoutes = new Elysia({ prefix: "/kv" })
   .get(
     "/:key",
-    async ({ params, status }) => {
-      try {
-        const value = await env.KV.get(params.key);
-        if (!value) {
-          return status(404, { error: "Key not found" });
-        }
-        return { key: params.key, value };
-      } catch (error) {
-        return status(500, {
-          error: "Failed to retrieve key",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    },
+    ({ params, status }) =>
+      RouteRuntime.runPromise(
+        Effect.gen(function* getKvValue() {
+          const kv = yield* CloudflareKv;
+          const result = yield* Effect.result(kv.get(params.key));
+
+          if (result._tag === "Failure") {
+            return status(500, {
+              error: "Failed to retrieve key",
+              message: result.failure.message,
+            });
+          }
+
+          return result.success === null
+            ? status(404, { error: "Key not found" })
+            : { key: params.key, value: result.success };
+        })
+      ),
     {
       detail: {
         summary: "Get value by key",
         tags: ["KV"],
       },
-      params: t.Object({ key: t.String({ minLength: 1 }) }),
+      params: Schema.toStandardSchemaV1(KeyParamsSchema),
+      response: {
+        200: Schema.toStandardSchemaV1(KvValueResponseSchema),
+        404: Schema.toStandardSchemaV1(ErrorOnlyResponseSchema),
+        500: Schema.toStandardSchemaV1(ErrorMessageResponseSchema),
+      },
     }
   )
   .put(
     "/:key",
-    async ({ body, params, status }) => {
-      try {
-        await env.KV.put(params.key, body.value);
-        return { key: params.key, value: body.value };
-      } catch (error) {
-        return status(500, {
-          error: "Failed to store key",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    },
+    ({ body, params, status }) =>
+      RouteRuntime.runPromise(
+        Effect.gen(function* putKvValue() {
+          const kv = yield* CloudflareKv;
+          const result = yield* Effect.result(kv.put(params.key, body.value));
+
+          if (result._tag === "Failure") {
+            return status(500, {
+              error: "Failed to store key",
+              message: result.failure.message,
+            });
+          }
+
+          return {
+            key: params.key,
+            value: body.value,
+          };
+        })
+      ),
     {
-      body: t.Object({ value: t.String() }),
+      body: Schema.toStandardSchemaV1(KvBodySchema),
       detail: {
         summary: "Set value for key",
         tags: ["KV"],
       },
-      params: t.Object({ key: t.String({ minLength: 1 }) }),
+      params: Schema.toStandardSchemaV1(KeyParamsSchema),
+      response: {
+        200: Schema.toStandardSchemaV1(KvValueResponseSchema),
+        500: Schema.toStandardSchemaV1(ErrorMessageResponseSchema),
+      },
     }
   )
   .delete(
     "/:key",
-    async ({ params, status }) => {
-      try {
-        await env.KV.delete(params.key);
-        return { deleted: params.key };
-      } catch (error) {
-        return status(500, {
-          error: "Failed to delete key",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    },
+    ({ params, status }) =>
+      RouteRuntime.runPromise(
+        Effect.gen(function* deleteKvValue() {
+          const kv = yield* CloudflareKv;
+          const result = yield* Effect.result(kv.delete(params.key));
+
+          if (result._tag === "Failure") {
+            return status(500, {
+              error: "Failed to delete key",
+              message: result.failure.message,
+            });
+          }
+
+          return { deleted: params.key };
+        })
+      ),
     {
       detail: {
         summary: "Delete key",
         tags: ["KV"],
       },
-      params: t.Object({ key: t.String({ minLength: 1 }) }),
+      params: Schema.toStandardSchemaV1(KeyParamsSchema),
+      response: {
+        200: Schema.toStandardSchemaV1(KvDeletedResponseSchema),
+        500: Schema.toStandardSchemaV1(ErrorMessageResponseSchema),
+      },
     }
   );

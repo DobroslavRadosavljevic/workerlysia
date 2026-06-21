@@ -1,5 +1,7 @@
-import { env } from "cloudflare:workers";
 import { Elysia } from "elysia";
+
+import { RouteRuntime } from "../effect/app";
+import { CacheService } from "../services/cache";
 
 export interface CacheOptions {
   /**
@@ -64,38 +66,27 @@ export const cachePlugin = (options: CacheOptions = {}) => {
           const actualTtl = Math.max(MIN_TTL, requestedTtl);
           const contentType = set.headers["content-type"] ?? "application/json";
 
-          try {
-            await env.KV.put(
-              cacheKey,
-              JSON.stringify({
-                body: JSON.stringify(responseValue),
-                contentType,
-              }),
-              { expirationTtl: actualTtl }
-            );
-          } catch {
-            // Fail open: cache write errors should not affect the response
-          }
+          await RouteRuntime.runPromise(
+            CacheService.use((cache) =>
+              cache.set(cacheKey, responseValue, String(contentType), actualTtl)
+            )
+          );
         },
         async beforeHandle({ cacheKey, set }) {
           if (!ttl) {
             return;
           }
 
-          try {
-            const cached = await env.KV.get(cacheKey);
-            if (cached) {
-              const parsed = JSON.parse(cached) as {
-                body: string;
-                contentType: string;
-              };
-              set.headers["x-cache"] = "HIT";
-              set.headers["content-type"] = parsed.contentType;
-              return JSON.parse(parsed.body) as unknown;
-            }
-          } catch {
-            // Fail open: cache read/parse errors should not affect the request
+          const cached = await RouteRuntime.runPromise(
+            CacheService.use((cache) => cache.get(cacheKey))
+          );
+
+          if (cached._tag === "Hit") {
+            set.headers["x-cache"] = "HIT";
+            set.headers["content-type"] = cached.contentType;
+            return cached.value;
           }
+
           set.headers["x-cache"] = "MISS";
         },
       }),

@@ -8,6 +8,8 @@ A **Cloudflare Worker** API built with **Elysia** framework and **Bun** runtime.
 - **Framework**: [Elysia](https://elysiajs.com/) with CloudflareAdapter
 - **Package Manager**: Bun 1.3 via `packageManager`
 - **Language**: TypeScript (strict mode), checked with `tsgo`
+- **Effect**: Effect v4 beta for route business logic, recoverable errors, schema validation, and KV IO wrappers
+- **Testing**: Vitest for tests, with `@effect/vitest` for Effect service/layer tests
 - **API Documentation**: OpenAPI via `@elysiajs/openapi` (available at `/docs`)
 - **Linting/Formatting**: Ultracite (Oxlint + Oxfmt)
 - **Install Security**: Bun `minimumReleaseAge` plus Socket.dev scanner in `bunfig.toml`
@@ -22,7 +24,9 @@ A **Cloudflare Worker** API built with **Elysia** framework and **Bun** runtime.
 | `bun run lint`       | Check code for issues               |
 | `bun run format`     | Auto-fix formatting and lint issues |
 | `bun run typecheck`  | Run TypeScript checks with `tsgo`   |
-| `bun run check`      | Run lint, typecheck, and audit      |
+| `bun run test`       | Run Vitest once                     |
+| `bun run test:watch` | Run Vitest in watch mode            |
+| `bun run check`      | Run lint, typecheck, tests, audit   |
 | `bun run cf-typegen` | Generate Cloudflare Worker types    |
 
 ## 📁 Project Structure
@@ -30,6 +34,8 @@ A **Cloudflare Worker** API built with **Elysia** framework and **Bun** runtime.
 ```
 src/
 ├── index.ts           # App entrypoint - registers routes and plugins
+├── effect/            # Effect app layer, runtime helpers, and tagged errors
+├── services/          # Context.Service definitions plus Live layers
 ├── plugins/           # Reusable Elysia plugins (macros)
 │   ├── cache.ts       # Response caching with KV
 │   └── rate-limit.ts  # Rate limiting with KV
@@ -37,8 +43,14 @@ src/
 │   ├── demo/          # Demo routes for testing plugins
 │   ├── storage/       # KV example routes
 │   └── tasks/         # Task CRUD routes
-└── schemas/           # Elysia type schemas for validation
+└── schemas/           # Effect Schema models for validation/OpenAPI
+    ├── common.ts
+    ├── kv.ts
     └── task.ts
+tests/
+├── mocks/             # Vitest-only runtime shims
+├── routes.test.ts     # Elysia route tests through app.handle(Request)
+└── services.test.ts   # Effect service tests with @effect/vitest
 ```
 
 ## 🧭 Current App Surface
@@ -59,19 +71,22 @@ src/
 - Always include `detail` with `summary` and `tags` for OpenAPI documentation
 
 ```typescript
+import { Effect, Schema } from "effect";
+import { Elysia } from "elysia";
+
+import { RouteRuntime } from "./effect/app";
+
 export const myRoute = new Elysia().get(
   "/path",
-  ({ query }) => {
-    /* handler */
-  },
+  ({ query }) => RouteRuntime.runPromise(Effect.succeed({ query })),
   {
-    query: MyQuerySchema,
     detail: {
       summary: "Description for OpenAPI",
       tags: ["TagName"],
     },
+    query: Schema.toStandardSchemaV1(MyQuerySchema),
     response: {
-      200: ResponseSchema,
+      200: Schema.toStandardSchemaV1(ResponseSchema),
     },
   }
 );
@@ -79,29 +94,58 @@ export const myRoute = new Elysia().get(
 
 ### 📐 Schemas
 
-- Define schemas in `src/schemas/` using Elysia's `t` (TypeBox)
+- Define schemas in `src/schemas/` using Effect Schema
+- Pass schemas to Elysia inline with `Schema.toStandardSchemaV1(...)`; do not add a local wrapper for route schemas
+- Keep `mapJsonSchema.effect` in `src/index.ts` as an inline `(schema: Schema.Top) => Schema.toJsonSchemaDocument(schema).schema` callback so OpenAPI can render Effect schemas
 - Use descriptive examples and format hints for OpenAPI documentation
 
 ```typescript
-import { t } from "elysia";
+import { Schema } from "effect";
 
-export const MySchema = t.Object({
-  name: t.String({ examples: ["example"] }),
-  date: t.String({ format: "date" }),
-  optional: t.Optional(t.String()),
+export const MySchema = Schema.Struct({
+  date: Schema.String.annotate({ format: "date" }),
+  name: Schema.String.annotate({ examples: ["example"] }),
+  optional: Schema.optionalKey(Schema.String),
 });
 ```
+
+### 🧠 Effect Boundaries
+
+- Keep Elysia as the HTTP boundary and run Effect programs with `RouteRuntime.runPromise(...)`.
+- `RouteRuntime` is the reusable `ManagedRuntime` from `src/effect/app.ts`; do not provide the full app layer per request.
+- Define dependencies as `Context.Service` classes under `src/services/`.
+- Provide implementations as `*Live` layers and compose them in `src/effect/app.ts`.
+- Use `Schema.TaggedErrorClass` classes under `src/effect/errors/` for recoverable domain/IO failures so constructor payload properties are Effect Schema-backed.
+- Give distinct failing operations distinct tagged error classes, such as `GetKvError`, `PutKvError`, and `DeleteKvError`; do not use a generic error with an `operation` field.
+- Construct operation-specific tagged errors inline at the failing boundary; do not add local error-constructor wrappers like `kvError(...)`.
+- Use `Effect.gen`, `Effect.succeed`, `Effect.try`, `Effect.tryPromise`, `Effect.result`, and `recoverTagged(...)` for business logic, parsing, async IO, and recoverable errors.
+- Use Effect's clock-backed APIs for current time inside Effect code: `Clock.currentTimeMillis` for numeric time and `DateTime.now` plus `DateTime.formatIso*` for formatted dates. Do not call `Date.now()` or `new Date()` as the time source in services, routes, or plugins.
+- Use `CloudflareKv` from `src/services/cloudflare-kv.ts` for KV operations instead of calling `env.KV` directly in routes/plugins.
+- Use `Schema.decodeUnknownEffect(...)` when data comes from storage or JSON parsing and needs runtime validation.
+
+### 🧪 Testing
+
+- Use Vitest, not Bun's test runner.
+- Read `TESTING.md` before adding or changing tests.
+- Test successful Elysia route flows with Eden Treaty via `treaty(app)` for end-to-end type-safe request/response checks.
+- Use `app.handle(new Request("http://localhost/..."))` for intentionally invalid request-shape tests that a typed Treaty client should reject at compile time.
+- Import `describe`, `it`, `expect`, and lifecycle helpers explicitly from `vitest`; Vitest globals are disabled.
+- Use `@effect/vitest` for Effect-heavy tests, especially `layer(...)(...)` and `it.effect(...)` when testing services and layers.
+- Keep Cloudflare runtime shims under `tests/mocks/`; do not leak test-only mocks into `src/`.
+- Add tests for schema validation failures when adding request schemas.
+- Cover success behavior, validation failures, recoverable tagged errors, plugin-owned headers, and KV side effects when the route owns them.
+- Keep stateful cache/rate-limit route tests sequential and reset test KV state between tests.
 
 ### ☁️ Cloudflare Bindings
 
 - Worker bindings are configured in `wrangler.jsonc`
 - Types are generated with `bun run cf-typegen` into `worker-configuration.d.ts`
-- Access bindings via `env` in the Elysia context
+- KV access is wrapped by `CloudflareKvLive` in `src/services/cloudflare-kv.ts`, which imports Cloudflare's Worker `env`
 - Use `.dev.vars` for local Worker secrets and variables. Keep `.dev.vars` out of git and use `.dev.vars.example` as the committed template.
 - Use `wrangler secret put <NAME>` for deployed secrets. Do not store sensitive values in `vars` inside `wrangler.jsonc`.
 - `compatibility_date` is intentionally current and should be followed by `bun run cf-typegen` after changes.
 
-**Available bindings:**
+**Available binding exposed through services:**
 
 - `env.KV` - KVNamespace for key-value storage
 
